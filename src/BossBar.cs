@@ -82,6 +82,55 @@ namespace TerrariaArsenal
             return null;
         }
 
+        // Flagi PlayerData ustawiane, gdy boss jest pokonany. Niektorzy bossowie (np. False Knight) po smierci
+        // zostaja na scenie z hp > 0, wiec pasek znika po tej fladze, a nie dopiero po zmianie sceny.
+        private static readonly Dictionary<string, string> DefeatFlags = new Dictionary<string, string>
+        {
+            { "killedFalseKnight", "False Knight" }, { "falseKnightDefeated", "False Knight" },
+            { "falseKnightDreamDefeated", "Failed Champion" },
+            { "killedHornet", "Hornet" }, { "hornet1Defeated", "Hornet" },
+            { "hornetOutskirtsDefeated", "Hornet Sentinel" },
+            { "defeatedMantisLords", "Mantis Lords" },
+            { "killedTraitorLord", "Traitor Lord" },
+            { "mageLordDefeated", "Soul Master" }, { "mageLordDreamDefeated", "Soul Tyrant" },
+            { "killedInfectedKnight", "Broken Vessel" }, { "infectedKnightDreamDefeated", "Lost Kin" },
+            { "defeatedMegaJelly", "Uumuu" },
+            { "killedHollowKnight", "The Hollow Knight" },
+            { "killedHollowKnightPrime", "Pure Vessel" },
+            { "giantFlyDefeated", "Gruz Mother" }, { "giantBuzzerDefeated", "Vengefly King" },
+            { "mawlekDefeated", "Brooding Mawlek" },
+            { "megaMossChargerDefeated", "Massive Moss Charger" },
+            { "defeatedDungDefender", "Dung Defender" }, { "whiteDefenderDefeated", "White Defender" },
+            { "flukeMotherDefeated", "Flukemarm" },
+            { "killedMimicSpider", "Nosk" },
+            { "killedHiveKnight", "Hive Knight" },
+            { "killedGrimm", "Troupe Master Grimm" }, { "defeatedNightmareGrimm", "Nightmare King Grimm" },
+            { "collectorDefeated", "The Collector" },
+            { "killedLobsterLancer", "God Tamer" },
+            { "killedNailBros", "Brothers Oro & Mato" },
+            { "killedPaintmaster", "Paintmaster Sheo" },
+            { "killedNailsage", "Great Nailsage Sly" },
+            { "greyPrinceDefeated", "Grey Prince Zote" },
+            { "defeatedMegaBeamMiner", "Crystal Guardian" }, { "defeatedMegaBeamMiner2", "Enraged Guardian" }
+        };
+
+        private static string defeated;   // boss pokonany w tej scenie - jego pasek juz nie wraca
+
+        public static void OnFlag(string flag)
+        {
+            string boss;
+            if (!DefeatFlags.TryGetValue(flag, out boss)) return;
+            defeated = boss;
+            if (current == boss) Clear();
+        }
+
+        // Zmiana sceny: pasek znika, a pokonany boss moze miec pasek znowu (np. w Hall of Gods).
+        public static void SceneChanged()
+        {
+            Clear();
+            defeated = null;
+        }
+
         public static void Clear()
         {
             Parts.Clear();
@@ -93,7 +142,7 @@ namespace TerrariaArsenal
         public static void OnDamaged(HealthManager hm, int hpBefore)
         {
             string name = BossName(hm);
-            if (name == null) return;
+            if (name == null || name == defeated) return;
             if (current != name)
             {
                 Parts.Clear();

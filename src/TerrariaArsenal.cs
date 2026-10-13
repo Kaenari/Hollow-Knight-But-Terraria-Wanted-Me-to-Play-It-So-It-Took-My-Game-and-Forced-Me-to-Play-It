@@ -86,7 +86,7 @@ namespace TerrariaArsenal
 
         public override string GetVersion()
         {
-            return "1.0.0.0";
+            return "1.0.1.0";
         }
 
         public override void Initialize()
@@ -165,6 +165,7 @@ namespace TerrariaArsenal
         {
             int room;
             if (orig && BossRooms.TryGetValue(name, out room)) UnlockRoom(room);
+            if (orig) BossBar.OnFlag(name);
             Accessory acc = Accessories.ByFlag(name);
             if (orig && acc != null && PlayerData.instance != null && !PlayerData.instance.GetBool(name) && Runner.Instance != null)
             {
@@ -204,11 +205,14 @@ namespace TerrariaArsenal
             }
 
             int before = self.hp;
+            bool wasDead = self.GetIsDead();
             orig(self, hit);
 
             try
             {
                 int dealt = before - self.hp;
+                // Bronie z moda (pociski, bicze, miniony) daja SOUL jak gwozdz.
+                if (ours && hit.AttackType != AttackTypes.Nail && !wasDead && (dealt > 0 || self.GetIsDead())) GiveSoul(self);
                 if (dealt <= 0) dealt = Mathf.RoundToInt(hit.DamageDealt * hit.Multiplier);
                 Vector3 top = self.transform.position;
                 Collider2D col = self.GetComponent<Collider2D>();
@@ -221,6 +225,31 @@ namespace TerrariaArsenal
             {
                 LogError(e.ToString());
             }
+        }
+
+        // SOUL za trafienie bronia z moda: tak jak cios gwozdzia (HeroController.SoulGain), ale nie czesciej
+        // niz co 0,35 s, zeby szybkie bronie (S.D.M.G., miniony) nie ladowaly SOUL w sekunde.
+        private const float SoulInterval = 0.35f;
+        private float nextSoulTime;
+        private static System.Reflection.FieldInfo enemyTypeField;
+
+        private void GiveSoul(HealthManager hm)
+        {
+            HeroController hero = HeroController.instance;
+            if (hero == null || Time.time < nextSoulTime) return;
+            if (enemyTypeField == null)
+            {
+                enemyTypeField = typeof(HealthManager).GetField("enemyType",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            }
+            if (enemyTypeField != null)
+            {
+                // Te same wyjatki co w HK: wrogowie typu 3 i 6 nie daja SOUL.
+                int type = System.Convert.ToInt32(enemyTypeField.GetValue(hm));
+                if (type == 3 || type == 6) return;
+            }
+            nextSoulTime = Time.time + SoulInterval;
+            hero.SoulGain();
         }
 
         // Gdy w rece jest luk/magia, przycisk ataku strzela zamiast ciac gwozdziem.

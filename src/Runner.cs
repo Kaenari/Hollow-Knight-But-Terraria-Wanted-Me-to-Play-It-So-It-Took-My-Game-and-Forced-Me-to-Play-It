@@ -72,7 +72,7 @@ namespace TerrariaArsenal
                 groundTime = 0f;
                 ChestRoom.Clear();
                 DamageNumbers.Clear();
-                BossBar.Clear();
+                BossBar.SceneChanged();
             }
 
             BossBar.Tick(Time.deltaTime);
