@@ -1,0 +1,12 @@
+# Wyniki kompilacji
+*.dll
+*.log
+*.rsp
+*.zip
+*.sha256.txt
+
+# Grafiki i dzwieki z Terrarii NIE moga trafic do repozytorium (prawa autorskie Re-Logic).
+# Mod czyta je z Terrarii gracza; w repo sa tylko wlasne grafiki moda.
+res/*
+!res/Dust.png
+!res/P_Spark.png
