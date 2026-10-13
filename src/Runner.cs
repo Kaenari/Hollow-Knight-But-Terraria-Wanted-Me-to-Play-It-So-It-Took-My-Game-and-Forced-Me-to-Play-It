@@ -604,7 +604,7 @@ namespace TerrariaArsenal
                 {
                     Vector3 from = new Vector3(target.x + Random.Range(-3f, 3f), hero.transform.position.y + 11f, origin.z);
                     Vector2 v = (target + new Vector2(Random.Range(-0.6f, 0.6f), 0f) - (Vector2)from).normalized * w.Speed * 1.2f;
-                    SpawnShot(w, sprite, from, v, true);
+                    SpawnShot(w, sprite, from, v, true).IgnoreTerrainAboveY = target.y + 1f;
                 }
                 return;
             }
@@ -620,7 +620,7 @@ namespace TerrariaArsenal
             }
         }
 
-        private static void SpawnShot(Weapon w, Sprite sprite, Vector3 origin, Vector2 velocity, bool fromSky)
+        private static Projectile SpawnShot(Weapon w, Sprite sprite, Vector3 origin, Vector2 velocity, bool fromSky)
         {
             GameObject go = Combat.MakeSprite("TA_Shot", sprite, origin, w.Tint);
             Projectile p = go.AddComponent<Projectile>();
@@ -635,8 +635,10 @@ namespace TerrariaArsenal
             p.Bounce = w.Bounce;
             p.Homing = w.Homing;
             p.BeesOnHit = w.BeesOnHit;
-            // Z nieba pociski przelatuja przez sufit, zeby dalo sie ich uzywac w jaskiniach.
+            // Z nieba pociski przelatuja przez sufit (zeby dalo sie ich uzywac w jaskiniach),
+            // ale tuz nad celem zatrzymuja sie na scianach i podlodze.
             p.IgnoreTerrain = fromSky;
+            return p;
         }
 
         private static Vector2 MouseWorld(HeroController hero)
@@ -665,7 +667,9 @@ namespace TerrariaArsenal
                 Sprite[] frames = Assets.GetFrames(best.Sprite, 30f, best.Frames);
                 minion = Combat.MakeSprite("TA_Minion", frames != null ? frames[0] : null, pos, Color.white);
                 DontDestroyOnLoad(minion);
-                minion.AddComponent<Minion>().Frames = frames;
+                Minion mn = minion.AddComponent<Minion>();
+                mn.Frames = frames;
+                mn.FacesLeft = best.Sprite == "M_Hornet";   // tylko szerszen jest narysowany glowa w lewo
                 minionSprite = best.Sprite;
             }
             Minion m = minion.GetComponent<Minion>();

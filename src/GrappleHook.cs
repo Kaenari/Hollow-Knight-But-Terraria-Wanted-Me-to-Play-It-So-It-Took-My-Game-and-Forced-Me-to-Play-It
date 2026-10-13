@@ -143,6 +143,15 @@ namespace TerrariaArsenal
                 return;
             }
 
+            // Dash w trakcie przyciagania: odczepia hak i od razu robi dash (jak w Terrarii).
+            bool dash = InputHandler.Instance != null && InputHandler.Instance.inputActions.dash.WasPressed;
+            if (dash)
+            {
+                Release(hero, false);
+                TryDash(hero);
+                return;
+            }
+
             Vector2 target = hookPos + ((Vector2)hero.transform.position - hookPos).normalized * 0.7f;
             Vector2 to = target - (Vector2)hero.transform.position;
             if (to.magnitude < 0.15f)
@@ -158,6 +167,29 @@ namespace TerrariaArsenal
             {
                 if (to.x < 0f && hero.cState.facingRight) hero.FaceLeft();
                 else if (to.x > 0f && !hero.cState.facingRight) hero.FaceRight();
+            }
+        }
+
+        private static System.Reflection.MethodInfo canDashMethod, heroDashMethod;
+
+        // Prywatne CanDash/HeroDash z HeroController - te same, ktorych gra uzywa po wcisnieciu dasha.
+        private static void TryDash(HeroController hero)
+        {
+            if (canDashMethod == null)
+            {
+                System.Reflection.BindingFlags f = System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+                canDashMethod = typeof(HeroController).GetMethod("CanDash", f);
+                heroDashMethod = typeof(HeroController).GetMethod("HeroDash", f);
+            }
+            if (canDashMethod == null || heroDashMethod == null) return;
+            try
+            {
+                if ((bool)canDashMethod.Invoke(hero, null)) heroDashMethod.Invoke(hero, null);
+            }
+            catch (System.Exception e)
+            {
+                TerrariaArsenal.Instance.LogError("Dash z haka: " + e.Message);
             }
         }
 

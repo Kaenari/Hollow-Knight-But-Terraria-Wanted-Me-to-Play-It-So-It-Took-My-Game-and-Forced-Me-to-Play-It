@@ -13,6 +13,12 @@ namespace TerrariaArsenal
         // Zadaje obrazenia wrogowi trafionemu kolizja. Zwraca true, jesli trafil.
         public static bool Damage(Collider2D col, int damage, GameObject source, float directionDeg)
         {
+            return Damage(col, damage, source, directionDeg, 1f);
+        }
+
+        // knockback: 1 = odrzut wroga jak od gwozdzia, 0 = bez odrzutu (luki i magia - inaczej latwo "cheesowac" bossow).
+        public static bool Damage(Collider2D col, int damage, GameObject source, float directionDeg, float knockback)
+        {
             if (col == null) return false;
             HealthManager hm = col.GetComponent<HealthManager>();
             if (hm == null) hm = col.GetComponentInParent<HealthManager>();
@@ -24,7 +30,7 @@ namespace TerrariaArsenal
             hit.DamageDealt = damage;
             hit.Direction = directionDeg;
             hit.Multiplier = 1f;
-            hit.MagnitudeMultiplier = 1f;
+            hit.MagnitudeMultiplier = knockback;
             // Tak samo jak cios gwozdzia (DamageEnemies.DoDamage): zdarzenie FSM + trafienie.
             FSMUtility.SendEventToGameObject(col.gameObject, "TAKE DAMAGE");
             hm.Hit(hit);
@@ -80,6 +86,9 @@ namespace TerrariaArsenal
             CircleCollider2D c = go.AddComponent<CircleCollider2D>();
             c.isTrigger = true;
             c.radius = radius / Mathf.Max(0.01f, go.transform.lossyScale.x);
+            // Fizyczny wyzwalacz jest wylaczony: dotkniecia liczy HitBreakables (po calej drodze pocisku,
+            // wiec szybkie pociski nie przeskakuja dzwigni), a tarcze wrogow (TinkEffect) nie odpychaja gracza.
+            c.enabled = false;
 
             // Kokony lifeblood, skaly z geo, slupy itp. po trafieniu "Nail Attack" szukaja na atakujacym
             // FSM "damages_enemy" (np. zmiennej "direction"). Gra znajduje tylko WLACZONE FSM,
@@ -116,40 +125,117 @@ namespace TerrariaArsenal
             hd.Direction.Value = a < 45f || a >= 315f ? 0f : (a < 135f ? 90f : (a < 225f ? 180f : 270f));
         }
 
-        // Doniczki, skrzynki, latarnie, trawa itp. (obiekty z IHitResponder poza wrogami).
+        // Wszystko, co reaguje na cios gwozdzia (poza wrogami, ktorych rani Damage): dzwignie, dzwonki, ukryte
+        // sciany, kokony, skaly z geo, trawa, doniczki... Liczone po calej drodze od "from" do "pos".
         public static void HitBreakables(Vector2 pos, float radius, List<Collider2D> done, GameObject source, float directionDeg)
         {
-            Collider2D[] cols = Physics2D.OverlapCircleAll(pos, radius);
-            foreach (Collider2D c in cols)
+            HitBreakables(pos, pos, radius, done, source, directionDeg);
+        }
+
+        public static void HitBreakables(Vector2 from, Vector2 pos, float radius, List<Collider2D> done, GameObject source, float directionDeg)
+        {
+            if (source == null) return;
+            Collider2D own = source.GetComponent<Collider2D>();
+            if (own == null)
             {
-                if (c == null || done.Contains(c)) continue;
-                GameObject g = c.gameObject;
-                if (g.layer == 11 || g == source || g.GetComponent<HitDirection>() != null) continue;
-                if (HeroController.instance != null && g.transform.IsChildOf(HeroController.instance.transform)) continue;
-                // Skaly z geo, pekajace sciany, dzwignie itp. czekaja w FSM na zdarzenie "TAKE DAMAGE",
-                // ktore gwozdz wysyla do wszystkiego, w co trafi.
-                FSMUtility.SendEventToGameObject(g, "TAKE DAMAGE");
-                done.Add(c);
-                foreach (MonoBehaviour mb in c.GetComponents<MonoBehaviour>())
+                MakeHitter(source, radius);
+                own = source.GetComponent<Collider2D>();
+            }
+            Vector2 d = pos - from;
+            float dist = d.magnitude;
+            if (dist > 0.01f)
+            {
+                foreach (RaycastHit2D h in Physics2D.CircleCastAll(from, radius, d / dist, dist))
                 {
-                    IHitResponder r = mb as IHitResponder;
-                    if (r == null || mb is HealthManager) continue;
-                    HitInstance hit = new HitInstance();
-                    hit.Source = source;
-                    hit.AttackType = AttackTypes.Nail;
-                    hit.DamageDealt = 1;
-                    hit.Direction = directionDeg;
-                    hit.Multiplier = 1f;
-                    hit.MagnitudeMultiplier = 1f;
-                    try
-                    {
-                        r.Hit(hit);
-                    }
-                    catch (System.Exception)
-                    {
-                    }
+                    Touch(h.collider, own, done, source, directionDeg);
                 }
             }
+            foreach (Collider2D c in Physics2D.OverlapCircleAll(pos, radius))
+            {
+                Touch(c, own, done, source, directionDeg);
+            }
+        }
+
+        private static void Touch(Collider2D c, Collider2D own, List<Collider2D> done, GameObject source, float directionDeg)
+        {
+            if (c == null || done.Contains(c)) return;
+            GameObject g = c.gameObject;
+            if (g.layer == 11 || g == source || g.GetComponent<HitDirection>() != null) return;
+            if (HeroController.instance != null && g.transform.IsChildOf(HeroController.instance.transform)) return;
+            done.Add(c);
+
+            // 1. To samo, co Unity robi, gdy cios gwozdzia wejdzie w obiekt: OnTriggerEnter2D na jego skryptach
+            //    (FSM dzwigni, dzwonkow, kokonow...). Bez TinkEffect (odrzut gracza od tarcz).
+            SendTrigger(g, own);
+            if (c.attachedRigidbody != null && c.attachedRigidbody.gameObject != g) SendTrigger(c.attachedRigidbody.gameObject, own);
+
+            // 2. Skaly z geo, pekajace sciany, dzwignie itp. czekaja w FSM na zdarzenie "TAKE DAMAGE",
+            //    ktore gwozdz wysyla do wszystkiego, w co trafi.
+            FSMUtility.SendEventToGameObject(g, "TAKE DAMAGE");
+
+            // 3. Obiekty z IHitResponder (doniczki, trawa, skrzynki).
+            foreach (MonoBehaviour mb in c.GetComponents<MonoBehaviour>())
+            {
+                IHitResponder r = mb as IHitResponder;
+                if (r == null || mb is HealthManager) continue;
+                HitInstance hit = new HitInstance();
+                hit.Source = source;
+                hit.AttackType = AttackTypes.Nail;
+                hit.DamageDealt = 1;
+                hit.Direction = directionDeg;
+                hit.Multiplier = 1f;
+                hit.MagnitudeMultiplier = 1f;
+                try
+                {
+                    r.Hit(hit);
+                }
+                catch (System.Exception)
+                {
+                }
+            }
+        }
+
+        private static readonly Dictionary<System.Type, System.Reflection.MethodInfo> TriggerMethods =
+            new Dictionary<System.Type, System.Reflection.MethodInfo>();
+        private static readonly object[] TriggerArgs = new object[1];
+
+        private static void SendTrigger(GameObject g, Collider2D own)
+        {
+            if (own == null) return;
+            // Tylko tam, gdzie Unity samo wyslaloby wyzwalacz (macierz kolizji warstw), zeby nie ruszac stref
+            // gracza (przejscia, kamera, napisy lokacji).
+            if (Physics2D.GetIgnoreLayerCollision(own.gameObject.layer, g.layer)) return;
+            foreach (MonoBehaviour mb in g.GetComponents<MonoBehaviour>())
+            {
+                if (mb == null || !mb.enabled || mb is TinkEffect || mb is HealthManager) continue;
+                System.Reflection.MethodInfo m = TriggerMethod(mb.GetType());
+                if (m == null) continue;
+                TriggerArgs[0] = own;
+                try
+                {
+                    m.Invoke(mb, TriggerArgs);
+                }
+                catch (System.Exception)
+                {
+                }
+            }
+        }
+
+        private static System.Reflection.MethodInfo TriggerMethod(System.Type t)
+        {
+            System.Reflection.MethodInfo m;
+            if (TriggerMethods.TryGetValue(t, out m)) return m;
+            m = null;
+            for (System.Type k = t; k != null && k != typeof(MonoBehaviour); k = k.BaseType)
+            {
+                m = k.GetMethod("OnTriggerEnter2D",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly,
+                    null, new System.Type[] { typeof(Collider2D) }, null);
+                if (m != null) break;
+            }
+            TriggerMethods[t] = m;
+            return m;
         }
 
         public static GameObject MakeSprite(string name, Sprite sprite, Vector3 pos, Color tint)
@@ -182,6 +268,7 @@ namespace TerrariaArsenal
         public float Homing;            // stopnie/s skretu w strone najblizszego wroga (0 = brak)
         public bool FaceByFlip;         // zamiast obracac grafike, odbij ja w poziomie (pszczoly)
         public bool IgnoreTerrain;
+        public float IgnoreTerrainAboveY = float.NegativeInfinity; // z nieba: sciany licza sie dopiero ponizej tej wysokosci
         public float Burn;              // podpalenie trafionego wroga (sekundy)
         public int Bounce;              // ile razy odbija sie od scian
         public int BeesOnHit;           // pszczoly po trafieniu
@@ -241,7 +328,17 @@ namespace TerrariaArsenal
                     Velocity = Vector3.RotateTowards(Velocity, want, Homing * Mathf.Deg2Rad * dt, 0f);
                 }
             }
-            Vector3 pos = transform.position + (Vector3)(Velocity * dt);
+            Vector3 start = transform.position;
+            Vector3 pos = start + (Vector3)(Velocity * dt);
+
+            // Sciana na drodze (promien od poprzedniej do nowej pozycji): szybkie pociski nie przelatuja przez cienkie sciany.
+            bool ignore = IgnoreTerrain && pos.y > IgnoreTerrainAboveY;
+            RaycastHit2D wall = ignore ? new RaycastHit2D() : Physics2D.Linecast(start, pos, Combat.TerrainMask);
+            if (wall.collider != null)
+            {
+                Vector2 back = Velocity.sqrMagnitude > 0.0001f ? Velocity.normalized * 0.05f : Vector2.zero;
+                pos = new Vector3(wall.point.x - back.x, wall.point.y - back.y, start.z);
+            }
             transform.position = pos;
 
             if (FaceByFlip)
@@ -259,25 +356,28 @@ namespace TerrariaArsenal
             }
 
             Combat.SetHitDirection(gameObject, Velocity);
-            Combat.HitBreakables(pos, 0.35f, brokeHit, gameObject, Velocity.x >= 0f ? 0f : 180f);
-            if (!IgnoreTerrain && Physics2D.OverlapPoint(pos, Combat.TerrainMask) != null)
-            {
-                if (Bounce > 0 && TryBounce())
-                {
-                    Bounce--;
-                    return;
-                }
-                Stop();
-                return;
-            }
-            prevPos = pos;
+            float dirDeg = Velocity.x >= 0f ? 0f : 180f;
+            // Wszystko na drodze pocisku (dzwignie, dzwonki, ukryte sciany...) poczuje trafienie jak od gwozdzia.
+            Combat.HitBreakables(start, pos, 0.35f, brokeHit, gameObject, dirDeg);
 
-            Collider2D[] hits = Physics2D.OverlapCircleAll(pos, 0.35f, Combat.EnemyMask);
-            foreach (Collider2D c in hits)
+            // Wrogowie na calej drodze pocisku (bez odrzutu wroga).
+            List<Collider2D> victims = new List<Collider2D>();
+            Vector2 seg = (Vector2)(pos - start);
+            if (seg.sqrMagnitude > 0.0001f)
+            {
+                foreach (RaycastHit2D h in Physics2D.CircleCastAll(start, 0.35f, seg.normalized, seg.magnitude, Combat.EnemyMask))
+                {
+                    if (h.collider != null && !victims.Contains(h.collider)) victims.Add(h.collider);
+                }
+            }
+            foreach (Collider2D c in Physics2D.OverlapCircleAll(pos, 0.35f, Combat.EnemyMask))
+            {
+                if (!victims.Contains(c)) victims.Add(c);
+            }
+            foreach (Collider2D c in victims)
             {
                 if (alreadyHit.Contains(c)) continue;
-                float dir = Velocity.x >= 0f ? 0f : 180f;
-                if (Combat.Damage(c, Damage, gameObject, dir))
+                if (Combat.Damage(c, Damage, gameObject, dirDeg, 0f))
                 {
                     alreadyHit.Add(c);
                     HealthManager victim = c.GetComponent<HealthManager>();
@@ -293,6 +393,26 @@ namespace TerrariaArsenal
                     Life *= 0.5f;
                 }
             }
+
+            if (wall.collider != null || (!ignore && Physics2D.OverlapPoint(pos, Combat.TerrainMask) != null))
+            {
+                if (Bounce > 0 && wall.collider != null)
+                {
+                    Bounce--;
+                    Velocity = Vector2.Reflect(Velocity, wall.normal) * 0.8f;
+                    transform.position = (Vector3)(wall.point + wall.normal * 0.15f) + new Vector3(0f, 0f, pos.z);
+                    prevPos = transform.position;
+                    return;
+                }
+                if (Bounce > 0 && TryBounce())
+                {
+                    Bounce--;
+                    return;
+                }
+                Stop();
+                return;
+            }
+            prevPos = pos;
         }
     }
 
@@ -303,6 +423,8 @@ namespace TerrariaArsenal
         public float Cooldown = 0.9f;
         public Sprite[] Frames;               // klatki animacji (null albo 1 = bez animacji)
         public float FrameTime = 0.09f;
+        public bool FacesLeft;                // grafika patrzy w lewo (np. szerszen z Hornet Staff)
+        private Vector3 lastPos;
 
         private float animTime;
         private const float Range = 9f;
@@ -322,9 +444,17 @@ namespace TerrariaArsenal
         private void Update()
         {
             HeroController hero = HeroController.instance;
-            if (hero == null) return;
+            GameManager gm = GameManager.instance;
+            // Wyjscie do menu: minion znika (Runner przywola go znowu po wczytaniu gry).
+            if (hero == null || gm == null || !gm.IsGameplayScene())
+            {
+                Destroy(gameObject);
+                return;
+            }
             if (brokeHit.Count > 20) brokeHit.Clear();
-            Combat.HitBreakables(transform.position, 0.4f, brokeHit, gameObject, 0f);
+            if (lastPos == Vector3.zero) lastPos = transform.position;
+            Combat.HitBreakables(lastPos, transform.position, 0.4f, brokeHit, gameObject, transform.position.x >= lastPos.x ? 0f : 180f);
+            lastPos = transform.position;
 
             float dt = Time.deltaTime;
             cooldownLeft -= dt;
@@ -366,7 +496,8 @@ namespace TerrariaArsenal
             float dx = goal.x - transform.position.x;
             transform.position = Vector3.MoveTowards(transform.position, goal, Speed * dt);
             // Obrot tylko przy wyraznym ruchu w bok; przy Rycerzu patrzy tam co on (bez migania).
-            if (sr != null) sr.flipX = Mathf.Abs(dx) > 0.3f ? dx < 0f : !hero.cState.facingRight;
+            bool lookLeft = Mathf.Abs(dx) > 0.3f ? dx < 0f : !hero.cState.facingRight;
+            if (sr != null) sr.flipX = FacesLeft ? !lookLeft : lookLeft;
 
             if (target != null && cooldownLeft <= 0f &&
                 Vector2.Distance(transform.position, target.transform.position) < 0.9f)
