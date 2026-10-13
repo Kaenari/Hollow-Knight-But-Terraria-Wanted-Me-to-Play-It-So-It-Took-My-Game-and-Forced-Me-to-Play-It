@@ -16,7 +16,7 @@ Mod do **Hollow Knight**, w którym grasz postacią z Terrarii z bronią z Terra
 **Najprościej:** w [Lumafly](https://themulhima.github.io/Lumafly/) wyszukaj ten mod i kliknij **Install**.
 
 **Ręcznie:**
-1. Pobierz `TerrariaArsenal_release.zip` z zakładki *Releases* i rozpakuj go tak, żeby powstał folder `...\Hollow Knight\hollow_knight_Data\Managed\Mods\TerrariaArsenal\` z plikiem `TerrariaArsenal.dll`.
+1. Pobierz zip z folderu [`release`](release/) (najnowsza wersja) i rozpakuj go tak, żeby powstał folder `...\Hollow Knight\hollow_knight_Data\Managed\Mods\TerrariaArsenal\` z plikiem `TerrariaArsenal.dll`.
 2. Uruchom grę. Mod sam znajdzie Terrarię w bibliotekach Steam. Jeśli jej nie znajdzie, w menu głównym pojawi się okno, w którym wklejasz folder Terrarii i klikasz **Zapisz**. Ścieżkę możesz też wpisać ręcznie w `TerrariaPath` w pliku `TerrariaArsenal.GlobalSettings.json` (w folderze zapisów gry: `%AppData%\..\LocalLow\Team Cherry\Hollow Knight\`).
 
 ### Wygląd postaci
@@ -85,7 +85,7 @@ A **Hollow Knight** mod that lets you play as a Terraria character with Terraria
 **Easiest:** search for this mod in [Lumafly](https://themulhima.github.io/Lumafly/) and click **Install**.
 
 **Manually:**
-1. Download `TerrariaArsenal_release.zip` from *Releases* and unzip it so that you get `...\Hollow Knight\hollow_knight_Data\Managed\Mods\TerrariaArsenal\TerrariaArsenal.dll`.
+1. Download the zip from the [`release`](release/) folder (latest version) and unzip it so that you get `...\Hollow Knight\hollow_knight_Data\Managed\Mods\TerrariaArsenal\TerrariaArsenal.dll`.
 2. Start the game. Terraria is found automatically in your Steam libraries. If it is not found, a window in the main menu lets you paste the Terraria folder and click **Save**. You can also set `TerrariaPath` in `TerrariaArsenal.GlobalSettings.json` (in the HK save folder: `%AppData%\..\LocalLow\Team Cherry\Hollow Knight\`).
 
 ### Character appearance

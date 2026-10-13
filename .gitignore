@@ -10,3 +10,6 @@
 res/*
 !res/Dust.png
 !res/P_Spark.png
+
+# Gotowe paczki dla graczy (link w ModLinks/Lumafly)
+!release/*.zip
